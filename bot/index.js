@@ -15,99 +15,74 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const app = express();
 app.use(express.json());
 
-// Keep-alive endpoint for Render
 app.get('/', (req, res) => res.send('PFAS Bot is running'));
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- In-memory pending transactions ---
-// Key: messageId, Value: transaction object
 const pending = {};
 
-// --- SMS Parser ---
+function feeCategory(source) {
+  if (source === 'MPESA') return 'Fees & Charges:M-PESA Fee';
+  if (source === 'LOOP') return 'Fees & Charges:Loop Fee';
+  if (source === 'ABSA') return 'Fees & Charges:Bank Fee';
+  return 'Fees & Charges:Bank Fee';
+}
+
 function parseSMS(text) {
   const txn = {
-    raw_text: text,
-    source: 'UNKNOWN',
-    type: 'OTHER',
-    amount: 0,
-    currency: 'KES',
-    merchant: '',
-    reference: '',
-    fee: 0,
-    balance_after: 0,
-    date: '',
-    time: '',
-    confidence: 0
+    raw_text: text, source: 'UNKNOWN', type: 'OTHER',
+    amount: 0, currency: 'KES', merchant: '', reference: '',
+    fee: 0, balance_after: 0, date: '', time: '', confidence: 0
   };
 
-  // M-PESA SEND
   let m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+\d{10}/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'SEND';
-    txn.reference = m[1];
-    txn.amount = parseFloat(m[2].replace(/,/g, ''));
-    txn.merchant = m[3].trim();
-    txn.confidence = 95;
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
-  // M-PESA RECEIVE
   m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'RECEIVE';
-    txn.reference = m[1];
-    txn.amount = parseFloat(m[2].replace(/,/g, ''));
-    txn.merchant = m[3].trim();
-    txn.confidence = 95;
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
-  // M-PESA PAYBILL
   m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+for account/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'BILL_PAYMENT';
-    txn.reference = m[1];
-    txn.amount = parseFloat(m[2].replace(/,/g, ''));
-    txn.merchant = m[3].trim();
-    txn.confidence = 92;
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 92;
   }
 
-  // LOOP Paybill
   m = text.match(/M-PESA Paybill Successful:KES\.([\d,]+\.?\d*)\s+to\s+\d+\s+-\s+(.+?)\s+-/i);
   if (m) {
     txn.source = 'LOOP'; txn.type = 'BILL_PAYMENT';
     txn.amount = parseFloat(m[1].replace(/,/g, ''));
-    txn.merchant = m[2].trim();
-    txn.confidence = 90;
+    txn.merchant = m[2].trim(); txn.confidence = 90;
   }
 
-  // LOOP Card spend
   m = text.match(/Online transaction of (USD|KES)\.([\d,]+\.?\d*)\s+has been approved.*?at\s+(.+?)\s+on/i);
   if (m) {
     txn.source = 'LOOP'; txn.type = 'CARD_SPEND';
-    txn.currency = m[1];
-    txn.amount = parseFloat(m[2].replace(/,/g, ''));
-    txn.merchant = m[3].trim();
-    txn.confidence = 92;
+    txn.currency = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 92;
   }
 
-  // ABSA Card spend
   m = text.match(/transaction of KES ([\d,]+\.?\d*)\s+has been made on your Absa card.*?at\s+(.+?)\.\s+Your/i);
   if (m) {
     txn.source = 'ABSA'; txn.type = 'CARD_SPEND';
     txn.amount = parseFloat(m[1].replace(/,/g, ''));
-    txn.merchant = m[2].trim();
-    txn.confidence = 92;
+    txn.merchant = m[2].trim(); txn.confidence = 92;
   }
 
-  // ABSA Card payment received
   m = text.match(/Absa confirms receipt of payment.*?of KES ([\d,]+\.?\d*)/i);
   if (m) {
     txn.source = 'ABSA'; txn.type = 'CARD_PAYMENT';
     txn.amount = parseFloat(m[1].replace(/,/g, ''));
-    txn.merchant = 'Absa Card Payment';
-    txn.confidence = 88;
+    txn.merchant = 'Absa Card Payment'; txn.confidence = 88;
   }
 
-  // Extract date/time
   const dateM = text.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   if (dateM) txn.date = dateM[1];
   const dateM2 = text.match(/(\d{4}-\d{2}-\d{2})/);
@@ -117,25 +92,23 @@ function parseSMS(text) {
   const timeM2 = text.match(/at\s+(\d{1,2}:\d{2}:\d{2})/i);
   if (timeM2 && !txn.time) txn.time = timeM2[1];
 
-  // Extract fee
   const feeM = text.match(/Transaction cost[,\s]+Ksh([\d,]+\.\d+)/i);
   if (feeM) txn.fee = parseFloat(feeM[1].replace(/,/g, ''));
   const feeM2 = text.match(/Fee:\s*KES\.([\d,]+\.?\d*)/i);
   if (feeM2) txn.fee = parseFloat(feeM2[1].replace(/,/g, ''));
 
-  // Extract balance
   const balM = text.match(/New M-PESA balance is Ksh([\d,]+\.\d+)/i);
   if (balM) txn.balance_after = parseFloat(balM[1].replace(/,/g, ''));
   const balM2 = text.match(/available balance to spend is ([\d,]+\.?\d*)/i);
   if (balM2) txn.balance_after = parseFloat(balM2[1].replace(/,/g, ''));
 
-  // Suggest category
-  txn.suggested_category = suggestCategory(txn.merchant + ' ' + txn.raw_text);
+  // FIX: suggest category from MERCHANT only, not raw_text
+  // (Old logic scanned raw_text containing "Transaction cost" → wrongly tagged as M-PESA Fee)
+  txn.suggested_category = suggestCategory(txn.merchant);
 
   return txn;
 }
 
-// --- Format transaction card ---
 function formatCard(txn, splits) {
   const src = { MPESA: '📱', LOOP: '💳', ABSA: '🏦', UNKNOWN: '❓' }[txn.source] || '❓';
   const typeLabel = {
@@ -148,7 +121,7 @@ function formatCard(txn, splits) {
   text += `🏦 ${txn.source} — ${typeLabel}\n`;
   text += `👤 ${txn.merchant || 'Unknown'}\n`;
   text += `💰 ${txn.currency} ${Number(txn.amount).toLocaleString()}`;
-  if (txn.fee > 0) text += `  |  Fee: ${Number(txn.fee).toLocaleString()}`;
+  if (txn.fee > 0) text += `  |  Fee: ${Number(txn.fee).toLocaleString()} _(logs as separate row)_`;
   text += '\n\n';
 
   if (splits && splits.length > 0) {
@@ -168,53 +141,42 @@ function formatCard(txn, splits) {
   return text;
 }
 
-// --- Build category keyboard ---
 function buildCategoryKeyboard(txnId) {
   const groups = Object.keys(CATEGORY_GROUPS);
-  const keyboard = groups.map(group => [{
-    text: group,
-    callback_data: `grp:${txnId}:${group}`
-  }]);
+  const keyboard = groups.map(group => [{ text: group, callback_data: `grp:${txnId}:${group}` }]);
   keyboard.push([{ text: '↩️ Back to transaction', callback_data: `back:${txnId}` }]);
   return { inline_keyboard: keyboard };
 }
 
 function buildGroupKeyboard(txnId, group) {
   const items = CATEGORY_GROUPS[group] || [];
-  const keyboard = items.map(item => [{
-    text: item.label,
-    callback_data: `cat:${txnId}:${item.full}`
-  }]);
+  const keyboard = items.map(item => [{ text: item.label, callback_data: `cat:${txnId}:${item.full}` }]);
   keyboard.push([{ text: '↩️ Back to groups', callback_data: `cats:${txnId}` }]);
   return { inline_keyboard: keyboard };
 }
 
-function buildMainKeyboard(txnId, hasSplits) {
-  const keyboard = [
-    [
-      { text: '✅ Confirm', callback_data: `confirm:${txnId}` },
-      { text: '📂 Category', callback_data: `cats:${txnId}` }
-    ],
-    [
-      { text: '✂️ Split', callback_data: `split:${txnId}` },
-      { text: '🗑️ Skip', callback_data: `skip:${txnId}` }
+function buildMainKeyboard(txnId) {
+  return {
+    inline_keyboard: [
+      [{ text: '✅ Confirm', callback_data: `confirm:${txnId}` }, { text: '📂 Category', callback_data: `cats:${txnId}` }],
+      [{ text: '✂️ Split', callback_data: `split:${txnId}` }, { text: '🗑️ Skip', callback_data: `skip:${txnId}` }]
     ]
-  ];
-  return { inline_keyboard: keyboard };
+  };
 }
 
-// --- Save to Google Sheet ---
+// SAVE TO SHEET — Fee as separate row (Option C)
 async function saveToSheet(txn, splits) {
   const ts = new Date().toISOString();
+  const baseId = Date.now();
   let rows = [];
 
   if (splits && splits.length > 0) {
     splits.forEach((s, i) => {
       rows.push([
-        `TXN-${Date.now()}-${i}`,
+        `TXN-${baseId}-${i}`,
         txn.date, txn.time, txn.source, txn.type,
         s.amount, txn.currency, txn.merchant,
-        txn.reference, i === 0 ? txn.fee : 0,
+        txn.reference, 0, // fee logged separately below
         i === 0 ? txn.balance_after : 0,
         s.category, s.notes || '', txn.confidence,
         i === 0 ? txn.raw_text.substring(0, 500) : `[Split ${i + 1} of ${splits.length}]`,
@@ -223,12 +185,27 @@ async function saveToSheet(txn, splits) {
     });
   } else {
     rows.push([
-      `TXN-${Date.now()}-0`,
+      `TXN-${baseId}-0`,
       txn.date, txn.time, txn.source, txn.type,
       txn.amount, txn.currency, txn.merchant,
-      txn.reference, txn.fee, txn.balance_after,
+      txn.reference, 0, txn.balance_after,
       txn.suggested_category, '', txn.confidence,
       txn.raw_text.substring(0, 500), ts
+    ]);
+  }
+
+  // FEE AS SEPARATE LEDGER ROW
+  if (txn.fee > 0) {
+    rows.push([
+      `TXN-${baseId}-FEE`,
+      txn.date, txn.time, txn.source, 'FEE',
+      txn.fee, txn.currency, `${txn.source} Fee`,
+      txn.reference, 0, 0,
+      feeCategory(txn.source),
+      `Fee for ${txn.reference || txn.merchant}`,
+      txn.confidence,
+      `[Fee for TXN-${baseId}]`,
+      ts
     ]);
   }
 
@@ -239,163 +216,56 @@ async function saveToSheet(txn, splits) {
   return await res.json();
 }
 
-// --- Handle incoming messages ---
+function detectIntent(text) {
+  if (!text) return 'unknown';
+  if (text === '/start') return 'start';
+  if (text === '/pending') return 'pending';
+  if (/^\/done\s+\d+$/.test(text)) return 'done';
+  if (/^[\d,]+\.?\d*\s*\|/.test(text)) return 'splitline';
+  if (/\b(Ksh|KES|USD)[\d.,\s]/i.test(text) || /\b(Confirmed|Paybill|Absa)\b/i.test(text)) return 'sms';
+  return 'unknown';
+}
+
+// SINGLE MERGED MESSAGE HANDLER (was two handlers before — caused duplicate "Could not parse")
 bot.on('message', async (msg) => {
   if (msg.chat.id.toString() !== CHAT_ID) return;
-  const text = msg.text || '';
+  const text = (msg.text || '').trim();
+  const intent = detectIntent(text);
 
-  // /start command
-  if (text === '/start') {
+  if (intent === 'start') {
     return bot.sendMessage(CHAT_ID,
-      '👋 *PFAS Bot ready.*\n\nSend or forward any M-PESA, Loop, or Absa SMS and I\'ll parse it for you.',
+      '👋 *PFAS Bot ready.*\n\nForward any M-PESA, Loop, or Absa SMS and I\'ll parse it.\n\n' +
+      'Commands:\n• /pending — view unconfirmed\n• /start — show help',
       { parse_mode: 'Markdown' }
     );
   }
 
-  // /pending command
-  if (text === '/pending') {
+  if (intent === 'pending') {
     const count = Object.keys(pending).length;
     return bot.sendMessage(CHAT_ID,
-      count > 0
-        ? `⏳ You have *${count}* unconfirmed transaction(s). Scroll up to review.`
-        : '✅ No pending transactions.',
+      count > 0 ? `⏳ ${count} unconfirmed transaction(s). Scroll up to review.` : '✅ No pending transactions.',
       { parse_mode: 'Markdown' }
     );
   }
 
-  // Try to parse as SMS
-  const txn = parseSMS(text);
-  if (txn.confidence === 0) {
-    return bot.sendMessage(CHAT_ID,
-      '⚠️ Could not parse this as a transaction. Forward an M-PESA, Loop, or Absa SMS.',
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  // Send transaction card
-  const txnId = `${Date.now()}`;
-  pending[txnId] = { txn, splits: [] };
-
-  await bot.sendMessage(CHAT_ID, formatCard(txn, []), {
-    parse_mode: 'Markdown',
-    reply_markup: buildMainKeyboard(txnId, false)
-  });
-});
-
-// --- Handle button presses ---
-bot.on('callback_query', async (query) => {
-  const data = query.data;
-  const msgId = query.message.message_id;
-
-  await bot.answerCallbackQuery(query.id);
-
-  const [action, txnId, ...rest] = data.split(':');
-  const entry = pending[txnId];
-  if (!entry && action !== 'back') return;
-
-  // CONFIRM
-  if (action === 'confirm') {
-    try {
-      const result = await saveToSheet(entry.txn, entry.splits);
-      delete pending[txnId];
-      await bot.editMessageText(
-        `✅ *Saved!*\n\n${formatCard(entry.txn, entry.splits.length ? entry.splits : null)}`,
-        { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown' }
-      );
-    } catch(e) {
-      await bot.sendMessage(CHAT_ID, `❌ Save failed: ${e.message}`);
-    }
-  }
-
-  // SKIP
-  else if (action === 'skip') {
-    delete pending[txnId];
-    await bot.editMessageText(
-      `🗑️ *Skipped.*`,
-      { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown' }
-    );
-  }
-
-  // SHOW CATEGORY GROUPS
-  else if (action === 'cats') {
-    await bot.editMessageReplyMarkup(
-      buildCategoryKeyboard(txnId),
-      { chat_id: CHAT_ID, message_id: msgId }
-    );
-  }
-
-  // SHOW CATEGORIES IN GROUP
-  else if (action === 'grp') {
-    const group = rest.join(':');
-    await bot.editMessageReplyMarkup(
-      buildGroupKeyboard(txnId, group),
-      { chat_id: CHAT_ID, message_id: msgId }
-    );
-  }
-
-  // SET CATEGORY
-  else if (action === 'cat') {
-    const category = rest.join(':');
-    entry.txn.suggested_category = category;
-    await bot.editMessageText(
-      formatCard(entry.txn, entry.splits),
-      { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown',
-        reply_markup: buildMainKeyboard(txnId, entry.splits.length > 0) }
-    );
-  }
-
-  // SPLIT
-  else if (action === 'split') {
-    await bot.sendMessage(CHAT_ID,
-      `✂️ *Split transaction: ${entry.txn.currency} ${Number(entry.txn.amount).toLocaleString()}*\n\n` +
-      `Send each split line as:\n` +
-      `\`amount | category\`\n\n` +
-      `Example:\n` +
-      `\`1200 | Food & Dining:Groceries\`\n` +
-      `\`800 | Health:Pharmacy\`\n` +
-      `\`200 | Home:Household Items\`\n\n` +
-      `When done, send \`/done ${txnId}\``,
-      { parse_mode: 'Markdown' }
-    );
-    entry.splitting = true;
-  }
-
-  // BACK TO MAIN
-  else if (action === 'back') {
-    if (!entry) return;
-    await bot.editMessageReplyMarkup(
-      buildMainKeyboard(txnId, entry.splits.length > 0),
-      { chat_id: CHAT_ID, message_id: msgId }
-    );
-  }
-});
-
-// --- Handle split line entry ---
-bot.on('message', async (msg) => {
-  if (msg.chat.id.toString() !== CHAT_ID) return;
-  const text = msg.text || '';
-
-  // /done <txnId>
-  const doneM = text.match(/^\/done\s+(\d+)$/);
-  if (doneM) {
-    const txnId = doneM[1];
+  if (intent === 'done') {
+    const txnId = text.match(/^\/done\s+(\d+)$/)[1];
     const entry = pending[txnId];
     if (!entry) return bot.sendMessage(CHAT_ID, '⚠️ Transaction not found.');
     entry.splitting = false;
     const splitTotal = entry.splits.reduce((sum, s) => sum + s.amount, 0);
     const remaining = entry.txn.amount - splitTotal;
-    await bot.sendMessage(CHAT_ID,
+    return bot.sendMessage(CHAT_ID,
       `✂️ *Split summary:*\n${formatCard(entry.txn, entry.splits)}\n\n` +
       (remaining > 0 ? `⚠️ Still unallocated: ${entry.txn.currency} ${Number(remaining).toLocaleString()}\n\n` : '') +
-      `Tap Confirm to save or keep adding lines.`,
-      { parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId, true) }
+      `Tap Confirm to save.`,
+      { parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId) }
     );
-    return;
   }
 
-  // Split line: amount | category
-  const splitEntry = Object.entries(pending).find(([, e]) => e.splitting);
-  if (splitEntry) {
+  if (intent === 'splitline') {
+    const splitEntry = Object.entries(pending).find(([, e]) => e.splitting);
+    if (!splitEntry) return; // silent — not in split mode
     const [txnId, entry] = splitEntry;
     const parts = text.split('|').map(p => p.trim());
     if (parts.length >= 2) {
@@ -405,28 +275,108 @@ bot.on('message', async (msg) => {
         entry.splits.push({ amount, category, notes: parts[2] || '' });
         const splitTotal = entry.splits.reduce((sum, s) => sum + s.amount, 0);
         const remaining = entry.txn.amount - splitTotal;
-        await bot.sendMessage(CHAT_ID,
+        return bot.sendMessage(CHAT_ID,
           `✅ Added: ${entry.txn.currency} ${Number(amount).toLocaleString()} → ${category}\n` +
           `Remaining: ${entry.txn.currency} ${Number(remaining).toLocaleString()}\n\n` +
-          `Add another line or send \`/done ${txnId}\``,
+          `Add another or send \`/done ${txnId}\``,
           { parse_mode: 'Markdown' }
         );
-        return;
       }
     }
-    await bot.sendMessage(CHAT_ID, '⚠️ Format: `amount | category`\nExample: `1200 | Food & Dining:Groceries`', { parse_mode: 'Markdown' });
+    return bot.sendMessage(CHAT_ID, '⚠️ Format: `amount | category`', { parse_mode: 'Markdown' });
   }
-});
 
-// --- Daily 7am EAT nudge (UTC+3 = 4am UTC) ---
-cron.schedule('0 4 * * *', async () => {
-  const count = Object.keys(pending).length;
-  if (count > 0) {
-    await bot.sendMessage(CHAT_ID,
-      `☀️ *Good morning!*\n\nYou have *${count}* unconfirmed transaction(s) from yesterday.\n\nSend /pending to review.`,
+  if (intent === 'sms') {
+    const txn = parseSMS(text);
+    if (txn.confidence === 0) {
+      return bot.sendMessage(CHAT_ID,
+        '⚠️ Looks like an SMS but couldn\'t parse it. Send /start for help.',
+        { parse_mode: 'Markdown' }
+      );
+    }
+    const txnId = `${Date.now()}`;
+    pending[txnId] = { txn, splits: [], splitting: false };
+    return bot.sendMessage(CHAT_ID, formatCard(txn, []), {
+      parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId)
+    });
+  }
+
+  // Unknown — only respond to longer attempts, not random short noise
+  if (text.length > 20) {
+    return bot.sendMessage(CHAT_ID,
+      '⚠️ Could not parse this as a transaction. Forward an M-PESA, Loop, or Absa SMS.',
       { parse_mode: 'Markdown' }
     );
   }
 });
 
-console.log('PFAS Bot started.');
+bot.on('callback_query', async (query) => {
+  const data = query.data;
+  const msgId = query.message.message_id;
+  await bot.answerCallbackQuery(query.id);
+
+  const [action, txnId, ...rest] = data.split(':');
+  const entry = pending[txnId];
+  if (!entry && action !== 'back') return;
+
+  if (action === 'confirm') {
+    try {
+      await saveToSheet(entry.txn, entry.splits);
+      delete pending[txnId];
+      const feeNote = entry.txn.fee > 0 ? `\n💸 Fee row: ${entry.txn.currency} ${entry.txn.fee} → ${feeCategory(entry.txn.source)}` : '';
+      await bot.editMessageText(
+        `✅ *Saved!*${feeNote}\n\n${formatCard(entry.txn, entry.splits.length ? entry.splits : null)}`,
+        { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown' }
+      );
+    } catch(e) {
+      await bot.sendMessage(CHAT_ID, `❌ Save failed: ${e.message}`);
+    }
+  }
+  else if (action === 'skip') {
+    delete pending[txnId];
+    await bot.editMessageText(`🗑️ *Skipped.*`,
+      { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown' });
+  }
+  else if (action === 'cats') {
+    await bot.editMessageReplyMarkup(buildCategoryKeyboard(txnId),
+      { chat_id: CHAT_ID, message_id: msgId });
+  }
+  else if (action === 'grp') {
+    const group = rest.join(':');
+    await bot.editMessageReplyMarkup(buildGroupKeyboard(txnId, group),
+      { chat_id: CHAT_ID, message_id: msgId });
+  }
+  else if (action === 'cat') {
+    const category = rest.join(':');
+    entry.txn.suggested_category = category;
+    await bot.editMessageText(formatCard(entry.txn, entry.splits),
+      { chat_id: CHAT_ID, message_id: msgId, parse_mode: 'Markdown',
+        reply_markup: buildMainKeyboard(txnId) });
+  }
+  else if (action === 'split') {
+    await bot.sendMessage(CHAT_ID,
+      `✂️ *Split: ${entry.txn.currency} ${Number(entry.txn.amount).toLocaleString()}*\n\n` +
+      `Send each line as:\n\`amount | category\`\n\n` +
+      `When done, send \`/done ${txnId}\``,
+      { parse_mode: 'Markdown' }
+    );
+    entry.splitting = true;
+  }
+  else if (action === 'back') {
+    if (!entry) return;
+    await bot.editMessageReplyMarkup(buildMainKeyboard(txnId),
+      { chat_id: CHAT_ID, message_id: msgId });
+  }
+});
+
+cron.schedule('0 4 * * *', async () => {
+  const count = Object.keys(pending).length;
+  if (count > 0) {
+    await bot.sendMessage(CHAT_ID,
+      `☀️ *Good morning!*\n\n${count} unconfirmed transaction(s).\n\nSend /pending to review.`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+});
+
+console.log('PFAS Bot v2 started.');
