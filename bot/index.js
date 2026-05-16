@@ -517,4 +517,13 @@ cron.schedule('0 4 * * *', async () => {
   }
 });
 
+// Keep-alive ping every 10 minutes to prevent Render free tier sleep
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    await fetch(`http://localhost:${PORT}/`);
+  } catch(e) {
+    // silent — just keeping the process warm
+  }
+});
+
 console.log('PFAS Bot v2 started.');
