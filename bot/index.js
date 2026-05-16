@@ -216,6 +216,11 @@ function parseSMS(text) {
   return txn;
 }
 
+// Escape Telegram MarkdownV1 special characters in dynamic text
+function escMd(text) {
+  return String(text).replace(/[_*`[]/g, '\\$&');
+}
+
 function formatCard(txn, splits) {
   const src = { MPESA: '📱', LOOP: '💳', ABSA: '🏦', UNKNOWN: '❓' }[txn.source] || '❓';
   const typeLabel = {
@@ -226,7 +231,7 @@ function formatCard(txn, splits) {
   let text = `${src} *NEW TRANSACTION*\n\n`;
   text += `📅 ${txn.date || 'Unknown date'}  🕐 ${txn.time || 'Unknown time'}\n`;
   text += `🏦 ${txn.source} — ${typeLabel}\n`;
-  text += `👤 ${txn.merchant || 'Unknown'}\n`;
+  text += `👤 ${escMd(txn.merchant || 'Unknown')}\n`;
   text += `💰 ${txn.currency} ${Number(txn.amount).toLocaleString()}`;
   if (txn.fee > 0) text += `  |  Fee: ${Number(txn.fee).toLocaleString()} _(logs as separate row)_`;
   text += '\n\n';
@@ -412,11 +417,11 @@ bot.on('message', async (msg) => {
         await saveToSheet(txn, []);
         const feeNote = txn.fee > 0 ? ` + fee KES ${txn.fee}` : '';
         return bot.sendMessage(CHAT_ID,
-          `⚡ *Auto-logged*\n` +
+          `⚡ <b>Auto-logged</b>\n` +
           `${txn.source} ${txn.type} — ${txn.merchant}\n` +
           `💰 KES ${Number(txn.amount).toLocaleString()}${feeNote}\n` +
           `📂 ${autoCategory}`,
-          { parse_mode: 'Markdown' }
+          { parse_mode: 'HTML' }
         );
       } catch(e) {
         // If auto-save fails, fall through to manual confirmation
