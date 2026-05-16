@@ -72,25 +72,83 @@ function parseSMS(text) {
     fee: 0, balance_after: 0, date: '', time: '', confidence: 0
   };
 
-  let m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+\d{10}/i);
+  // SEND to person (with phone number)
+  let m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+0\d{9}/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'SEND';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
-  m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on/i);
+  // SEND to paybill/merchant name (no phone number e.g. ZIIDI, KPLC)
+  if (!m) {
+    m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+([A-Z][A-Z0-9 ]+?)\s+on\s+\d/i);
+    if (m) {
+      txn.source = 'MPESA'; txn.type = 'BILL_PAYMENT';
+      txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+      txn.merchant = m[3].trim(); txn.confidence = 92;
+    }
+  }
+
+  // RECEIVE from person
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+0\d[\d*]+\s+on/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'RECEIVE';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
+  // RECEIVE from business/paybill (no phone)
+  if (!m) {
+    m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on\s+\d/i);
+    if (m) {
+      txn.source = 'MPESA'; txn.type = 'RECEIVE';
+      txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+      txn.merchant = m[3].trim(); txn.confidence = 90;
+    }
+  }
+
+  // PAYBILL (for account)
   m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+for account/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'BILL_PAYMENT';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 92;
+  }
+
+  // FULIZA loan drawdown notification
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Fuliza M-PESA amount is Ksh\s*([\d,]+\.\d+)/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'LOAN_DRAWDOWN';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Fuliza M-PESA';
+    const feeM = text.match(/Access Fee charged Ksh\s*([\d,]+\.\d+)/i);
+    if (feeM) txn.fee = parseFloat(feeM[1].replace(/,/g, ''));
+    txn.confidence = 95;
+  }
+
+  // FULIZA repayment
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh\s*([\d,]+\.\d+)\s+from your M-PESA has been used to.*?Fuliza/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'LOAN_REPAYMENT';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Fuliza Repayment'; txn.confidence = 95;
+  }
+
+  // M-SHWARI withdraw (to M-PESA)
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.Ksh([\d,]+\.\d+)\s+transferred from M-Shwari/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'TRANSFER';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'M-Shwari'; txn.confidence = 95;
+  }
+
+  // KCB M-PESA transfer
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+transfer(?:r?ed)?\s+to\s+KCB M-PESA/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'TRANSFER';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'KCB M-PESA'; txn.confidence = 95;
   }
 
   m = text.match(/M-PESA Paybill Successful:KES\.([\d,]+\.?\d*)\s+to\s+\d+\s+-\s+(.+?)\s+-/i);
