@@ -15,6 +15,17 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const app = express();
 app.use(express.json());
 
+// Prevent crash on network blips and Telegram API timeouts
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+});
+bot.on('polling_error', (err) => {
+  console.error('Polling error:', err.message);
+});
+
 app.get('/', (req, res) => res.send('PFAS Bot is running'));
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
