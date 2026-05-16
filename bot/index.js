@@ -27,6 +27,55 @@ bot.on('polling_error', (err) => {
 });
 
 app.get('/', (req, res) => res.send('PFAS Bot is running'));
+
+// Webhook endpoint for MacroDroid SMS forwarding
+app.post('/sms', async (req, res) => {
+  try {
+    const smsText = req.body?.text || req.body?.sms || '';
+    if (!smsText) {
+      return res.status(400).json({ success: false, error: 'No SMS text provided' });
+    }
+    // Process the SMS as if it came from the Telegram chat
+    await processIncomingSms(smsText);
+    res.json({ success: true });
+  } catch(e) {
+    console.error('Webhook /sms error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Reusable SMS processor — called from both Telegram and webhook
+async function processIncomingSms(text) {
+  const txn = parseSMS(text);
+  if (txn.confidence === 0) {
+    return bot.sendMessage(CHAT_ID,
+      '⚠️ Looks like an SMS but couldn\'t parse it. Send /start for help.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+  const autoCategory = getAutoConfirm(txn.merchant, txn.raw_text);
+  if (autoCategory) {
+    txn.suggested_category = autoCategory;
+    try {
+      await saveToSheet(txn, []);
+      const feeNote = txn.fee > 0 ? ` + fee KES ${txn.fee}` : '';
+      return bot.sendMessage(CHAT_ID,
+        `⚡ <b>Auto-logged</b>\n` +
+        `${txn.source} ${txn.type} — ${txn.merchant}\n` +
+        `💰 KES ${Number(txn.amount).toLocaleString()}${feeNote}\n` +
+        `📂 ${autoCategory}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch(e) {
+      return bot.sendMessage(CHAT_ID, `⚠️ Auto-log failed: ${e.message}. Sending for manual review.`);
+    }
+  }
+  const txnId = `${Date.now()}`;
+  pending[txnId] = { txn, splits: [], splitting: false };
+  return bot.sendMessage(CHAT_ID, formatCard(txn, []), {
+    parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId)
+  });
+}
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 const pending = {};
@@ -401,42 +450,7 @@ bot.on('message', async (msg) => {
   }
 
   if (intent === 'sms') {
-    const txn = parseSMS(text);
-    if (txn.confidence === 0) {
-      return bot.sendMessage(CHAT_ID,
-        '⚠️ Looks like an SMS but couldn\'t parse it. Send /start for help.',
-        { parse_mode: 'Markdown' }
-      );
-    }
-
-    // Check if this merchant qualifies for auto-confirm
-    const autoCategory = getAutoConfirm(txn.merchant, txn.raw_text);
-
-    if (autoCategory) {
-      // Auto-log: save immediately, send silent notification
-      txn.suggested_category = autoCategory;
-      try {
-        await saveToSheet(txn, []);
-        const feeNote = txn.fee > 0 ? ` + fee KES ${txn.fee}` : '';
-        return bot.sendMessage(CHAT_ID,
-          `⚡ <b>Auto-logged</b>\n` +
-          `${txn.source} ${txn.type} — ${txn.merchant}\n` +
-          `💰 KES ${Number(txn.amount).toLocaleString()}${feeNote}\n` +
-          `📂 ${autoCategory}`,
-          { parse_mode: 'HTML' }
-        );
-      } catch(e) {
-        // If auto-save fails, fall through to manual confirmation
-        return bot.sendMessage(CHAT_ID, `⚠️ Auto-log failed: ${e.message}. Sending for manual review.`);
-      }
-    }
-
-    // Manual confirmation needed
-    const txnId = `${Date.now()}`;
-    pending[txnId] = { txn, splits: [], splitting: false };
-    return bot.sendMessage(CHAT_ID, formatCard(txn, []), {
-      parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId)
-    });
+    return processIncomingSms(text);
   }
 
   // Unknown — only respond to longer attempts, not random short noise
