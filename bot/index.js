@@ -69,9 +69,11 @@ const AUTO_CONFIRM_RULES = [
 
 // Returns category string if auto-confirm, null if needs manual confirmation
 function getAutoConfirm(merchant, rawText) {
-  const text = merchant + ' ' + rawText;
+  // Check merchant name ONLY — not raw SMS text.
+  // Raw SMS always contains promo footers like "Earn interest daily on Ziidi MMF"
+  // which would wrongly auto-confirm every M-PESA send as Financial:Investment.
   for (const rule of AUTO_CONFIRM_RULES) {
-    if (rule.p.test(text)) return rule.c;
+    if (rule.p.test(merchant)) return rule.c;
   }
   return null;
 }
