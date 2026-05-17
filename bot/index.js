@@ -171,7 +171,7 @@ function parseSMS(text) {
 
   // RECEIVE from business/paybill (no phone). Allows hyphens/mixed case in merchant name.
   if (!m) {
-    m = text.match(/([A-Z0-9]+)\s+Confirmed\.?\s*You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on\s+\d/i);
+    m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s*You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on\s+\d/i);
     if (m) {
       txn.source = 'MPESA'; txn.type = 'RECEIVE';
       txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
@@ -323,7 +323,7 @@ function parseSMS(text) {
 
 // Escape Telegram MarkdownV1 special characters in dynamic text
 function escMd(text) {
-  return String(text).replace(/[_*`[]/g, '\\$&');
+  return String(text).replace(/[_*`[]/g, '\\\$&');
 }
 
 function formatCard(txn, splits) {
@@ -438,8 +438,9 @@ function detectIntent(text) {
   if (text === '/start') return 'start';
   if (text === '/pending') return 'pending';
   if (/^\/done\s+\d+$/.test(text)) return 'done';
-  if (/^[\d,]+\.?\d*\s*\|/.test(text)) return 'splitline';
+  if (/^[\d,]+\.\d*\s*\|/.test(text)) return 'splitline';
   if (/\b(Ksh|KES|USD)[\d.,\s]/i.test(text) || /\b(Confirmed|Paybill|Absa)\b/i.test(text)) return 'sms';
+  if (/\bStanding Order\b.*\bscheduled\b/i.test(text)) return 'sms';
   return 'unknown';
 }
 
@@ -500,7 +501,7 @@ bot.on('message', async (msg) => {
         );
       }
     }
-    return bot.sendMessage(CHAT_ID, '⚠️ Format: `amount | category`', { parse_mode: 'Markdown' });
+    return bot.sendMessage(CHAT_ID, '⚠️ Format: \`amount | category\`', { parse_mode: 'Markdown' });
   }
 
   if (intent === 'sms') {
