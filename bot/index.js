@@ -15,7 +15,70 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const app = express();
 app.use(express.json());
 
+// Prevent crash on network blips and Telegram API timeouts
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason?.message || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+});
+bot.on('polling_error', (err) => {
+  console.error('Polling error:', err.message);
+});
+
 app.get('/', (req, res) => res.send('PFAS Bot is running'));
+
+// Webhook endpoint for MacroDroid SMS forwarding
+app.post('/sms', async (req, res) => {
+  try {
+    const smsText = req.body?.text || req.body?.sms || '';
+    if (!smsText) {
+      return res.status(400).json({ success: false, error: 'No SMS text provided' });
+    }
+    // Process the SMS as if it came from the Telegram chat
+    await processIncomingSms(smsText);
+    res.json({ success: true });
+  } catch(e) {
+    console.error('Webhook /sms error:', e.message);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// Reusable SMS processor — called from both Telegram and webhook
+async function processIncomingSms(text) {
+  const txn = parseSMS(text);
+  if (txn.confidence === -1) {
+    return; // silently ignore (e.g. Standing Order scheduling notifications)
+  }
+  if (txn.confidence === 0) {
+    return bot.sendMessage(CHAT_ID,
+      '⚠️ Looks like an SMS but couldn\'t parse it. Send /start for help.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+  const autoCategory = getAutoConfirm(txn.merchant, txn.raw_text);
+  if (autoCategory) {
+    txn.suggested_category = autoCategory;
+    try {
+      await saveToSheet(txn, []);
+      const feeNote = txn.fee > 0 ? ` + fee KES ${txn.fee}` : '';
+      return bot.sendMessage(CHAT_ID,
+        `⚡ <b>Auto-logged</b>\n` +
+        `${txn.source} ${txn.type} — ${txn.merchant}\n` +
+        `💰 KES ${Number(txn.amount).toLocaleString()}${feeNote}\n` +
+        `📂 ${autoCategory}`,
+        { parse_mode: 'HTML' }
+      );
+    } catch(e) {
+      return bot.sendMessage(CHAT_ID, `⚠️ Auto-log failed: ${e.message}. Sending for manual review.`);
+    }
+  }
+  const txnId = `${Date.now()}`;
+  pending[txnId] = { txn, splits: [], splitting: false };
+  return bot.sendMessage(CHAT_ID, formatCard(txn, []), {
+    parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId)
+  });
+}
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 const pending = {};
@@ -27,6 +90,46 @@ function feeCategory(source) {
   return 'Fees & Charges:Bank Fee';
 }
 
+// --- Auto-confirm rules ---
+const AUTO_CONFIRM_RULES = [
+  { p: /kplc|kenya power|prepaid/i, c: 'Bills & Utilities:Electricity' },
+  { p: /safaricom postpaid|postpaid bundles|airtime purchase|safaricom bundle/i, c: 'Bills & Utilities:Mobile Phone' },
+  { p: /dstv|multichoice|zuku/i, c: 'Bills & Utilities:Pay TV' },
+  { p: /atlas petroleum|total ruaka|shell karen|kenol|rubis|ola energy|astrol petroleum/i, c: 'Transport:Fuel' },
+  { p: /naivas|carrefour|quickmart|quick mart|cleanshelf/i, c: 'Food & Dining:Groceries' },
+  { p: /microsoft|office 365/i, c: 'Subscriptions:Software' },
+  { p: /netflix|spotify|apple\.com\/bill|amazon kids/i, c: 'Entertainment:Streaming' },
+  { p: /ziidi mmf|ziidi/i, c: 'Financial:Investment' },
+  { p: /cytonn/i, c: 'Financial:Investment' },
+  { p: /moja expressway|parkngo|parkingo|automatic park/i, c: 'Transport:Parking' },
+  { p: /aar hospital|hospital ltd|kihara outpatient/i, c: 'Health:Doctor / Hospital' },
+  { p: /pharmacy|chemist|goodlife/i, c: 'Health:Pharmacy' },
+  { p: /loop c2b|714777/i, c: 'Transfers:Loop' },
+  { p: /303030/i, c: 'Transfers:M-PESA to Bank' },
+  { p: /od loan repayment|m-pesa overdraw|232323/i, c: 'Loan Payment:Fuliza' },
+  { p: /m-shwari/i, c: 'Transfers:Savings' },
+  { p: /lipa na kcb|kcb m-pesa deposit/i, c: 'Transfers:M-PESA to Bank' },
+  { p: /equity paybill|equity bulk|247247/i, c: 'Transfers:Bank to M-PESA' },
+  { p: /cooperative bank|co-operative bank|400200/i, c: 'Transfers:Bank to M-PESA' },
+  { p: /grid link|pesapal.*sabi/i, c: 'Bills & Utilities:Internet' },
+  { p: /e-citizen|222222/i, c: 'Tax:VAT' },
+  { p: /meved dairy/i, c: 'Farm:Feed' },
+  { p: /kirawa road|kindergarten/i, c: 'Education:School Fees' },
+  { p: /marie stopes/i, c: 'Health:Doctor / Hospital' },
+  { p: /airport lounge/i, c: 'Transport:Air Travel' },
+];
+
+// Returns category string if auto-confirm, null if needs manual confirmation
+function getAutoConfirm(merchant, rawText) {
+  // Check merchant name ONLY — not raw SMS text.
+  // Raw SMS always contains promo footers like "Earn interest daily on Ziidi MMF"
+  // which would wrongly auto-confirm every M-PESA send as Financial:Investment.
+  for (const rule of AUTO_CONFIRM_RULES) {
+    if (rule.p.test(merchant)) return rule.c;
+  }
+  return null;
+}
+
 function parseSMS(text) {
   const txn = {
     raw_text: text, source: 'UNKNOWN', type: 'OTHER',
@@ -34,25 +137,134 @@ function parseSMS(text) {
     fee: 0, balance_after: 0, date: '', time: '', confidence: 0
   };
 
-  let m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+\d{10}/i);
+  // Silently ignore Standing Order scheduling notifications (not transactions)
+  if (/Standing Order.*has been scheduled to run/i.test(text)) {
+    txn.confidence = -1; // signal to bot: ignore silently
+    return txn;
+  }
+
+  // SEND to person (with phone number)
+  let m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+0\d{9}/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'SEND';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
-  m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on/i);
+  // SEND to paybill/merchant name (no phone number e.g. ZIIDI, KPLC)
+  if (!m) {
+    m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+([A-Z][A-Z0-9 ]+?)\s+on\s+\d/i);
+    if (m) {
+      txn.source = 'MPESA'; txn.type = 'BILL_PAYMENT';
+      txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+      txn.merchant = m[3].trim(); txn.confidence = 92;
+    }
+  }
+
+  // RECEIVE from person
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+0\d[\d*]+\s+on/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'RECEIVE';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 95;
   }
 
+  // RECEIVE from business/paybill (no phone). Allows hyphens/mixed case in merchant name.
+  if (!m) {
+    m = text.match(/([A-Z0-9]+)\s+Confirmed\.?\s*You have received\s+Ksh([\d,]+\.\d+)\s+from\s+(.+?)\s+on\s+\d/i);
+    if (m) {
+      txn.source = 'MPESA'; txn.type = 'RECEIVE';
+      txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+      // Strip trailing paybill account numbers (5+ digits) from merchant name
+      txn.merchant = m[3].trim().replace(/\s+\d{5,}$/, '').trim();
+      txn.confidence = 90;
+    }
+  }
+
+  // PAYBILL (for account)
   m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?)\s+for account/i);
   if (m) {
     txn.source = 'MPESA'; txn.type = 'BILL_PAYMENT';
     txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
     txn.merchant = m[3].trim(); txn.confidence = 92;
+  }
+
+  // FULIZA loan drawdown notification
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Fuliza M-PESA amount is Ksh\s*([\d,]+\.\d+)/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'LOAN_DRAWDOWN';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Fuliza M-PESA';
+    const feeM = text.match(/Access Fee charged Ksh\s*([\d,]+\.\d+)/i);
+    if (feeM) txn.fee = parseFloat(feeM[1].replace(/,/g, ''));
+    txn.confidence = 95;
+  }
+
+  // FULIZA repayment
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh\s*([\d,]+\.\d+)\s+from your M-PESA has been used to.*?Fuliza/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'LOAN_REPAYMENT';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Fuliza Repayment'; txn.confidence = 95;
+  }
+
+  // M-SHWARI withdraw (to M-PESA)
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.Ksh([\d,]+\.\d+)\s+transferred from M-Shwari/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'TRANSFER';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'M-Shwari'; txn.confidence = 95;
+  }
+
+  // KCB M-PESA transfer
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+transfer(?:r?ed)?\s+to\s+KCB M-PESA/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'TRANSFER';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'KCB M-PESA'; txn.confidence = 95;
+  }
+
+  // RATIBA / Standing Order: "Confirmed M-PESA Ratiba. Ksh X sent to NAME, PHONE, on DATE"
+  m = text.match(/([A-Z0-9]+)\s+Confirmed M-PESA Ratiba\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(.+?),\s+[\d]/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'SEND';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 95;
+  }
+
+  // BUY GOODS / Till number: "Confirmed. Ksh X paid to MERCHANT NAME. on DATE"
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+paid to\s+(.+?)\.\s+on/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'CARD_SPEND';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 92;
+  }
+
+  // AGENT WITHDRAWAL: "Ksh X withdrawn from M-PESA at Agent Till XXXX - MERCHANT"
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+withdrawn.*?Agent.*?-\s+(.+?)\s+on/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'WITHDRAWAL';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = m[3].trim(); txn.confidence = 95;
+  }
+
+  // AIRTEL MONEY / Offnet: "Ksh X sent to AIRTEL MONEY for Mobile No."
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Ksh([\d,]+\.\d+)\s+sent to\s+(AIRTEL MONEY)\s+for/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'SEND';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Airtel Money'; txn.confidence = 95;
+  }
+
+  // FULIZA LOAN NOTIFICATION: standalone "Fuliza M-PESA amount is Ksh X. Access Fee charged Ksh Y"
+  m = text.match(/([A-Z0-9]+)\s+Confirmed\.\s+Fuliza M-PESA amount is Ksh\s*([\d,]+\.?\d*)/i);
+  if (m) {
+    txn.source = 'MPESA'; txn.type = 'LOAN_DRAWDOWN';
+    txn.reference = m[1]; txn.amount = parseFloat(m[2].replace(/,/g, ''));
+    txn.merchant = 'Fuliza M-PESA';
+    const accessFee = text.match(/Access Fee charged Ksh\s*([\d,]+\.?\d*)/i);
+    if (accessFee) txn.fee = parseFloat(accessFee[1].replace(/,/g, ''));
+    txn.confidence = 95;
   }
 
   m = text.match(/M-PESA Paybill Successful:KES\.([\d,]+\.?\d*)\s+to\s+\d+\s+-\s+(.+?)\s+-/i);
@@ -109,6 +321,11 @@ function parseSMS(text) {
   return txn;
 }
 
+// Escape Telegram MarkdownV1 special characters in dynamic text
+function escMd(text) {
+  return String(text).replace(/[_*`[]/g, '\\$&');
+}
+
 function formatCard(txn, splits) {
   const src = { MPESA: '📱', LOOP: '💳', ABSA: '🏦', UNKNOWN: '❓' }[txn.source] || '❓';
   const typeLabel = {
@@ -119,7 +336,7 @@ function formatCard(txn, splits) {
   let text = `${src} *NEW TRANSACTION*\n\n`;
   text += `📅 ${txn.date || 'Unknown date'}  🕐 ${txn.time || 'Unknown time'}\n`;
   text += `🏦 ${txn.source} — ${typeLabel}\n`;
-  text += `👤 ${txn.merchant || 'Unknown'}\n`;
+  text += `👤 ${escMd(txn.merchant || 'Unknown')}\n`;
   text += `💰 ${txn.currency} ${Number(txn.amount).toLocaleString()}`;
   if (txn.fee > 0) text += `  |  Fee: ${Number(txn.fee).toLocaleString()} _(logs as separate row)_`;
   text += '\n\n';
@@ -287,18 +504,7 @@ bot.on('message', async (msg) => {
   }
 
   if (intent === 'sms') {
-    const txn = parseSMS(text);
-    if (txn.confidence === 0) {
-      return bot.sendMessage(CHAT_ID,
-        '⚠️ Looks like an SMS but couldn\'t parse it. Send /start for help.',
-        { parse_mode: 'Markdown' }
-      );
-    }
-    const txnId = `${Date.now()}`;
-    pending[txnId] = { txn, splits: [], splitting: false };
-    return bot.sendMessage(CHAT_ID, formatCard(txn, []), {
-      parse_mode: 'Markdown', reply_markup: buildMainKeyboard(txnId)
-    });
+    return processIncomingSms(text);
   }
 
   // Unknown — only respond to longer attempts, not random short noise
@@ -376,6 +582,15 @@ cron.schedule('0 4 * * *', async () => {
       `☀️ *Good morning!*\n\n${count} unconfirmed transaction(s).\n\nSend /pending to review.`,
       { parse_mode: 'Markdown' }
     );
+  }
+});
+
+// Keep-alive ping every 10 minutes to prevent Render free tier sleep
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    await fetch(`http://localhost:${PORT}/`);
+  } catch(e) {
+    // silent — just keeping the process warm
   }
 });
 
