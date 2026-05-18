@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PFAS">
+<title>PFAS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --bg-elev: #141414;
+    --bg-card: #1a1a1a;
+    --border: #2a2a2a;
+    --border-strong: #3a3a3a;
+    --text: #f5f5f0;
+    --text-dim: #8a8a85;
+    --text-faint: #555550;
+    --accent: #d4a574;
+    --negative: #c47862;
+    --positive: #8aa674;
+    --fee: #9a8a74;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Fraunces', Georgia, serif; font-size: 15px; line-height: 1.4; min-height: 100vh; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+
+  .container { max-width: 720px; margin: 0 auto; padding: 16px 14px 80px; }
+
+  header { padding: 8px 2px 18px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .brand { display: flex; align-items: baseline; justify-content: space-between; }
+  .brand h1 { font-weight: 500; font-size: 28px; letter-spacing: -0.02em; }
+  .brand .sub { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--bg-elev); border: 1px solid var(--border); padding: 10px 11px; }
+  .stat .label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 3px; }
+  .stat .value { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 500; color: var(--text); }
+  .stat .value.small { font-size: 13px; }
+
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .filters .full { grid-column: 1 / -1; }
+  .filter { background: var(--bg-elev); border: 1px solid var(--border); padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; }
+  .filter label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+  .filter input, .filter select {
+    background: transparent; border: none; outline: none; color: var(--text);
+    font-family: 'Fraunces', serif; font-size: 14px; padding: 1px 0; width: 100%;
+  }
+  .filter select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%238a8a85'%3e%3cpath d='M4 6l4 4 4-4'/%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right center; background-size: 14px; padding-right: 18px; }
+  .filter input::placeholder { color: var(--text-faint); font-style: italic; }
+  .filter input[type="date"] { color-scheme: dark; }
+
+  .actions { display: flex; gap: 8px; margin-bottom: 14px; }
+  button { background: var(--bg-elev); border: 1px solid var(--border-strong); color: var(--text); padding: 8px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; flex: 1; }
+  button:hover { background: var(--bg-card); border-color: var(--accent); color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  button.primary:hover { background: #e0b787; }
+
+  .meta { display: flex; justify-content: space-between; align-items: baseline; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-faint); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 2px 8px; }
+
+  .row { background: var(--bg-card); border: 1px solid var(--border); padding: 12px 13px; margin-bottom: 6px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+  .row .merchant { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; color: var(--text); }
+  .row .amount { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; text-align: right; }
+  .row .amount.fee { color: var(--fee); font-size: 13px; }
+  .row .amount.bill { color: var(--negative); }
+  .row .amount.send { color: var(--negative); }
+  .row .amount.receive { color: var(--positive); }
+  .row .amount.loan_drawdown { color: var(--positive); }
+  .row .amount.loan_repayment { color: var(--negative); }
+  .row .detail { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); letter-spacing: 0.02em; }
+  .row .detail-right { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-faint); text-align: right; letter-spacing: 0.05em; }
+  .row.expanded { background: var(--bg-elev); border-color: var(--border-strong); }
+  .row .raw { grid-column: 1 / -1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); line-height: 1.55; margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--border-strong); white-space: pre-wrap; word-break: break-word; display: none; }
+  .row.expanded .raw { display: block; }
+
+  .empty, .loading, .error { text-align: center; padding: 40px 20px; color: var(--text-dim); font-style: italic; }
+  .error { color: var(--negative); font-style: normal; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+  .footer { text-align: center; padding: 18px 0 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-faint); letter-spacing: 0.15em; text-transform: uppercase; }
+
+  @media (max-width: 380px) {
+    .summary { grid-template-columns: 1fr 1fr; }
+    .summary .stat:nth-child(3) { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <h1>PFAS</h1>
+      <span class="sub">Ledger</span>
+    </div>
+    <div class="summary" id="summary">
+      <div class="stat"><div class="label">Transactions</div><div class="value" id="stat-count">—</div></div>
+      <div class="stat"><div class="label">Total Out</div><div class="value small" id="stat-out">—</div></div>
+      <div class="stat"><div class="label">Total In</div><div class="value small" id="stat-in">—</div></div>
+    </div>
+  </header>
+
+  <section class="filters">
+    <div class="filter">
+      <label>From</label>
+      <input type="date" id="filter-from">
+    </div>
+    <div class="filter">
+      <label>To</label>
+      <input type="date" id="filter-to">
+    </div>
+    <div class="filter full">
+      <label>Merchant</label>
+      <input type="text" id="filter-merchant" placeholder="search…" autocomplete="off">
+    </div>
+    <div class="filter full">
+      <label>Type</label>
+      <select id="filter-type">
+        <option value="">All types</option>
+      </select>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button id="btn-clear">Clear</button>
+    <button class="primary" id="btn-refresh">Refresh</button>
+  </div>
+
+  <div class="meta">
+    <span id="meta-count">—</span>
+    <span id="meta-updated">—</span>
+  </div>
+
+  <div id="rows"></div>
+
+  <div class="footer">PFAS · LIVE FROM SUPABASE</div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ltryuynvaegzhevkofih.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_riLSc55rqHydnbNvJ9sqnw_2GHiImLZ';
+
+let ALL = [];
+
+const $ = id => document.getElementById(id);
+const fmt = n => {
+  const num = parseFloat(n) || 0;
+  return num.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtShort = n => {
+  const num = parseFloat(n) || 0;
+  if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+  if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+  return num.toFixed(0);
+};
+const escapeHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+async function fetchTransactions() {
+  const url = `${SUPABASE_URL}/rest/v1/transactions?select=*&order=created_at.desc&limit=200`;
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_ANON,
+      'Authorization': `Bearer ${SUPABASE_ANON}`,
+      'Accept': 'application/json'
+    }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+function populateTypeFilter(rows) {
+  const types = [...new Set(rows.map(r => r.type).filter(Boolean))].sort();
+  const sel = $('filter-type');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All types</option>' +
+    types.map(t => `<option value="${escapeHtml(t)}"${t === current ? ' selected' : ''}>${escapeHtml(t)}</option>`).join('');
+}
+
+function applyFilters() {
+  const from = $('filter-from').value;
+  const to = $('filter-to').value;
+  const merchant = $('filter-merchant').value.trim().toLowerCase();
+  const type = $('filter-type').value;
+
+  return ALL.filter(r => {
+    if (type && r.type !== type) return false;
+    if (merchant && !(r.merchant || '').toLowerCase().includes(merchant)) return false;
+    // date filter against created_at (UTC); convert to YYYY-MM-DD for comparison
+    const d = r.created_at ? r.created_at.slice(0, 10) : '';
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+}
+
+function render() {
+  const rows = applyFilters();
+  const container = $('rows');
+
+  // Summary computed from filtered set
+  let totalOut = 0, totalIn = 0;
+  rows.forEach(r => {
+    const amt = parseFloat(r.amount) || 0;
+    const t = (r.type || '').toUpperCase();
+    if (t === 'RECEIVE' || t === 'LOAN_DRAWDOWN') totalIn += amt;
+    else totalOut += amt;
+  });
+  $('stat-count').textContent = rows.length;
+  $('stat-out').textContent = fmtShort(totalOut);
+  $('stat-in').textContent = fmtShort(totalIn);
+
+  $('meta-count').textContent = `${rows.length} of ${ALL.length}`;
+
+  if (rows.length === 0) {
+    container.innerHTML = '<div class="empty">No transactions match these filters.</div>';
+    return;
+  }
+
+  container.innerHTML = rows.map(r => {
+    const typeClass = (r.type || 'other').toLowerCase();
+    const sign = (typeClass === 'receive' || typeClass === 'loan_drawdown') ? '+' : '−';
+    const merchant = escapeHtml(r.merchant || '—');
+    const ref = escapeHtml(r.reference || '');
+    const date = escapeHtml(r.date || '');
+    const time = escapeHtml(r.time || '');
+    const type = escapeHtml(r.type || '');
+    const amount = fmt(r.amount);
+    const raw = escapeHtml(r.raw_text || '');
+    const balance = r.balance_after ? `bal ${fmt(r.balance_after)}` : '';
+
+    return `<div class="row" data-id="${escapeHtml(r.row_id)}">
+      <div class="merchant">${merchant}</div>
+      <div class="amount ${typeClass}">${sign}${amount}</div>
+      <div class="detail">${date} ${time} · ${type}</div>
+      <div class="detail-right">${ref}${balance ? ' · ' + balance : ''}</div>
+      <div class="raw">${raw}</div>
+    </div>`;
+  }).join('');
+
+  // Wire up expand on tap
+  container.querySelectorAll('.row').forEach(el => {
+    el.addEventListener('click', () => el.classList.toggle('expanded'));
+  });
+}
+
+async function refresh() {
+  $('rows').innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    ALL = await fetchTransactions();
+    populateTypeFilter(ALL);
+    const now = new Date();
+    $('meta-updated').textContent = `Updated ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    render();
+  } catch (e) {
+    $('rows').innerHTML = `<div class="error">Failed to load: ${escapeHtml(e.message)}</div>`;
+    console.error(e);
+  }
+}
+
+// Wire events
+['filter-from', 'filter-to', 'filter-merchant', 'filter-type'].forEach(id => {
+  const el = $(id);
+  el.addEventListener('input', render);
+  el.addEventListener('change', render);
+});
+
+$('btn-clear').addEventListener('click', () => {
+  $('filter-from').value = '';
+  $('filter-to').value = '';
+  $('filter-merchant').value = '';
+  $('filter-type').value = '';
+  render();
+});
+
+$('btn-refresh').addEventListener('click', refresh);
+
+// Initial load
+refresh();
+</script>
+</body>
+</html>
