@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#f4ede0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PFAS">
+<title>PFAS Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:        #f4ede0;
+    --paper-warm:   #efe5d2;
+    --paper-card:   #faf5e9;
+    --ink:          #2a241c;
+    --ink-soft:     #5a4f3f;
+    --ink-faint:    #8a7e6c;
+    --rule:         #d8cdb5;
+    --rule-soft:    #e6dec9;
+    --accent:       #8a4a2a;
+    --accent-soft:  #c08868;
+    --positive:     #4a6b3a;
+    --negative:     #8a4a2a;
+    --fee:          #8a7e6c;
+    --saved-bg:     #e8f0d8;
+    --error-bg:     #f6e0d8;
+    --shadow:       0 1px 2px rgba(42,36,28,0.04), 0 1px 3px rgba(42,36,28,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--paper); color: var(--ink); font-family: 'Fraunces', Georgia, serif; font-size: 15px; line-height: 1.45; min-height: 100vh; }
+  body { padding-bottom: env(safe-area-inset-bottom); background-image: radial-gradient(circle at 20% 10%, rgba(192,136,104,0.04), transparent 60%); }
+
+  .container { max-width: 720px; margin: 0 auto; padding: 18px 14px 80px; }
+
+  header { padding: 4px 2px 18px; border-bottom: 1px solid var(--rule); margin-bottom: 14px; }
+  .brand { display: flex; align-items: baseline; justify-content: space-between; }
+  .brand h1 { font-weight: 600; font-size: 32px; letter-spacing: -0.025em; font-variation-settings: "opsz" 144; }
+  .brand .sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.18em; }
+
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 16px; }
+  .stat { background: var(--paper-card); border: 1px solid var(--rule); padding: 10px 11px; box-shadow: var(--shadow); }
+  .stat .label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 3px; }
+  .stat .value { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; color: var(--ink); }
+  .stat .value.small { font-size: 13px; }
+
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+  .filters .full { grid-column: 1 / -1; }
+  .filter { background: var(--paper-card); border: 1px solid var(--rule); padding: 9px 11px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); }
+  .filter label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.12em; }
+  .filter input, .filter select {
+    background: transparent; border: none; outline: none; color: var(--ink);
+    font-family: 'Fraunces', serif; font-size: 14px; padding: 1px 0; width: 100%;
+  }
+  .filter select { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%238a7e6c'%3e%3cpath d='M4 6l4 4 4-4'/%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right center; background-size: 14px; padding-right: 18px; }
+  .filter input::placeholder { color: var(--ink-faint); font-style: italic; }
+
+  .actions { display: flex; gap: 6px; margin-bottom: 14px; }
+  button { background: var(--paper-card); border: 1px solid var(--rule); color: var(--ink-soft); padding: 8px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; flex: 1; box-shadow: var(--shadow); }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  button.primary { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+  button.primary:hover { background: #6f3a20; }
+
+  .meta { display: flex; justify-content: space-between; align-items: baseline; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); letter-spacing: 0.1em; text-transform: uppercase; padding: 0 2px 8px; }
+
+  .row { background: var(--paper-card); border: 1px solid var(--rule); padding: 13px 14px; margin-bottom: 5px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; box-shadow: var(--shadow); position: relative; transition: background 0.3s, border-color 0.3s; }
+  .row.saved { background: var(--saved-bg); border-color: var(--positive); }
+  .row.saving { opacity: 0.6; }
+  .row.error { background: var(--error-bg); border-color: var(--accent); }
+  .row .merchant { font-size: 16px; font-weight: 500; letter-spacing: -0.005em; color: var(--ink); }
+  .row .amount { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; text-align: right; color: var(--ink); }
+  .row .amount.fee { color: var(--fee); font-size: 13px; }
+  .row .amount.receive, .row .amount.loan_drawdown { color: var(--positive); }
+  .row .category {
+    grid-column: 1 / -1;
+    font-family: 'Fraunces', serif;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 0.002em;
+    margin-top: 4px;
+    cursor: pointer;
+    padding: 4px 7px 4px 0;
+    border-bottom: 1px dashed transparent;
+    transition: border-color 0.15s, background 0.15s;
+    user-select: none;
+  }
+  .row .category:hover, .row .category:active { border-bottom-color: var(--accent-soft); }
+  .row .category .parent { color: var(--ink-faint); font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin-right: 7px; }
+  .row .category.empty { color: var(--ink-faint); font-style: italic; }
+  .row .category .pencil { opacity: 0.35; margin-left: 6px; font-size: 11px; }
+  .row .category.corrected::after { content: " ·"; color: var(--positive); margin-left: 4px; font-weight: bold; }
+  .row .detail { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.03em; }
+  .row .detail-right { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-faint); text-align: right; letter-spacing: 0.06em; }
+  .row .raw { grid-column: 1 / -1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-soft); line-height: 1.55; margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--rule); white-space: pre-wrap; word-break: break-word; display: none; }
+  .row.expanded .raw { display: block; }
+  .row .status-msg { grid-column: 1 / -1; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent); margin-top: 6px; }
+
+  .picker-backdrop { position: fixed; inset: 0; background: rgba(42,36,28,0.55); display: none; align-items: flex-end; justify-content: center; z-index: 100; padding: 14px; }
+  .picker-backdrop.open { display: flex; }
+  .picker { background: var(--paper); border: 1px solid var(--rule); width: 100%; max-width: 520px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 -4px 20px rgba(42,36,28,0.2); }
+  .picker-header { padding: 14px 16px 10px; border-bottom: 1px solid var(--rule); display: flex; justify-content: space-between; align-items: baseline; }
+  .picker-header h2 { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
+  .picker-header .step { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.15em; }
+  .picker-target { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-faint); padding: 6px 16px 0; }
+  .picker-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+  .picker-option { padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--rule-soft); font-size: 15px; display: flex; justify-content: space-between; align-items: center; }
+  .picker-option:hover, .picker-option:active { background: var(--paper-warm); }
+  .picker-option .chevron { color: var(--ink-faint); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .picker-footer { padding: 10px 14px; border-top: 1px solid var(--rule); display: flex; gap: 8px; }
+  .picker-footer button { flex: 1; }
+
+  .empty, .loading, .error { text-align: center; padding: 40px 20px; color: var(--ink-faint); font-style: italic; }
+  .error { color: var(--accent); font-style: normal; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+  .footer { text-align: center; padding: 18px 0 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-faint); letter-spacing: 0.18em; text-transform: uppercase; }
+
+  @media (max-width: 380px) {
+    .summary { grid-template-columns: 1fr 1fr; }
+    .summary .stat:nth-child(3) { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="brand">
+      <h1>PFAS</h1>
+      <span class="sub">Ledger</span>
+    </div>
+    <div class="summary">
+      <div class="stat"><div class="label">Transactions</div><div class="value" id="stat-count">—</div></div>
+      <div class="stat"><div class="label">Total Out</div><div class="value small" id="stat-out">—</div></div>
+      <div class="stat"><div class="label">Total In</div><div class="value small" id="stat-in">—</div></div>
+    </div>
+  </header>
+
+  <section class="filters">
+    <div class="filter">
+      <label>From</label>
+      <input type="date" id="filter-from">
+    </div>
+    <div class="filter">
+      <label>To</label>
+      <input type="date" id="filter-to">
+    </div>
+    <div class="filter full">
+      <label>Merchant</label>
+      <input type="text" id="filter-merchant" placeholder="search…" autocomplete="off">
+    </div>
+    <div class="filter full">
+      <label>Category</label>
+      <select id="filter-category">
+        <option value="">All categories</option>
+      </select>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button id="btn-clear">Clear</button>
+    <button class="primary" id="btn-refresh">Refresh</button>
+  </div>
+
+  <div class="meta">
+    <span id="meta-count">—</span>
+    <span id="meta-updated">—</span>
+  </div>
+
+  <div id="rows"></div>
+
+  <div class="footer">PFAS · LIVE FROM SUPABASE</div>
+
+</div>
+
+<div class="picker-backdrop" id="picker-backdrop">
+  <div class="picker">
+    <div class="picker-header">
+      <h2 id="picker-title">Choose category</h2>
+      <span class="step" id="picker-step">Step 1 of 2</span>
+    </div>
+    <div class="picker-target" id="picker-target">—</div>
+    <div class="picker-list" id="picker-list"></div>
+    <div class="picker-footer">
+      <button id="picker-back" style="display:none">Back</button>
+      <button id="picker-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://ltryuynvaegzhevkofih.supabase.co';
+const SUPABASE_ANON = 'sb_publishable_riLSc55rqHydnbNvJ9sqnw_2GHiImLZ';
+
+let ALL = [];
+let CATEGORIES = [];
+
+const $ = id => document.getElementById(id);
+const fmt = n => {
+  const num = parseFloat(n) || 0;
+  return num.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtShort = n => {
+  const num = parseFloat(n) || 0;
+  if (Math.abs(num) >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+  if (Math.abs(num) >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+  return num.toFixed(0);
+};
+const escapeHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+const sbHeaders = {
+  'apikey': SUPABASE_ANON,
+  'Authorization': `Bearer ${SUPABASE_ANON}`,
+  'Accept': 'application/json',
+  'Content-Type': 'application/json'
+};
+
+async function fetchTransactions() {
+  const url = `${SUPABASE_URL}/rest/v1/transactions?select=*&order=created_at.desc&limit=200`;
+  const res = await fetch(url, { headers: sbHeaders });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+async function fetchCategories() {
+  const url = `${SUPABASE_URL}/rest/v1/categories?select=slug,parent,child&order=parent.asc,child.asc`;
+  const res = await fetch(url, { headers: sbHeaders });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+async function updateTransactionCategory(rowEl, txn, newCategory) {
+  rowEl.classList.remove('saved', 'error');
+  rowEl.classList.add('saving');
+  rowEl.querySelectorAll('.status-msg').forEach(el => el.remove());
+
+  const isFirstCorrection = !txn.category_original;
+  const patch = {
+    category: newCategory,
+    category_corrected_at: new Date().toISOString()
+  };
+  if (isFirstCorrection) {
+    patch.category_original = txn.category || null;
+  }
+
+  const url = `${SUPABASE_URL}/rest/v1/transactions?row_id=eq.${encodeURIComponent(txn.row_id)}`;
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: { ...sbHeaders, 'Prefer': 'return=representation' },
+      body: JSON.stringify(patch)
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    }
+    const updated = await res.json();
+    // CRITICAL: An empty array means RLS blocked the write silently.
+    // Supabase returns 200 OK with [] when the row exists but the policy denies UPDATE.
+    // Without this check, the UI shows green "saved" for a write that never happened.
+    if (!Array.isArray(updated) || updated.length === 0) {
+      throw new Error('0 rows updated — likely a permissions issue. Check RLS policy.');
+    }
+    const idx = ALL.findIndex(r => r.row_id === txn.row_id);
+    if (idx >= 0) ALL[idx] = updated[0];
+    rowEl.classList.remove('saving');
+    rowEl.classList.add('saved');
+    setTimeout(() => rowEl.classList.remove('saved'), 1800);
+    render(true);
+  } catch (e) {
+    rowEl.classList.remove('saving');
+    rowEl.classList.add('error');
+    const msg = document.createElement('div');
+    msg.className = 'status-msg';
+    msg.textContent = `Save failed: ${e.message}`;
+    rowEl.appendChild(msg);
+    console.error('Update failed:', e);
+  }
+}
+
+let pickerState = null;
+
+function openPicker(rowEl, txn) {
+  pickerState = { rowEl, txn, step: 1, selectedParent: null };
+  renderPicker();
+  $('picker-backdrop').classList.add('open');
+}
+
+function closePicker() {
+  $('picker-backdrop').classList.remove('open');
+  pickerState = null;
+}
+
+function renderPicker() {
+  if (!pickerState) return;
+  const { txn, step, selectedParent } = pickerState;
+  $('picker-target').textContent = `${txn.merchant || '—'} · KES ${fmt(txn.amount)}`;
+  if (step === 1) {
+    $('picker-title').textContent = 'Choose parent';
+    $('picker-step').textContent = 'Step 1 of 2';
+    $('picker-back').style.display = 'none';
+    const counts = {};
+    CATEGORIES.forEach(c => { counts[c.parent] = (counts[c.parent] || 0) + 1; });
+    const parents = Object.keys(counts).sort();
+    $('picker-list').innerHTML = parents.map(p => `
+      <div class="picker-option" data-parent="${escapeHtml(p)}">
+        <span>${escapeHtml(p)}</span>
+        <span class="chevron">${counts[p]} ›</span>
+      </div>`).join('');
+    $('picker-list').querySelectorAll('.picker-option').forEach(el => {
+      el.addEventListener('click', () => {
+        pickerState.selectedParent = el.dataset.parent;
+        pickerState.step = 2;
+        renderPicker();
+      });
+    });
+  } else {
+    $('picker-title').textContent = 'Choose child';
+    $('picker-step').textContent = 'Step 2 of 2';
+    $('picker-back').style.display = 'block';
+    const children = CATEGORIES.filter(c => c.parent === selectedParent);
+    $('picker-list').innerHTML = `
+      <div class="picker-option" style="background:var(--paper-warm); cursor:default">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:var(--ink-faint)">${escapeHtml(selectedParent)}</span>
+      </div>
+    ` + children.map(c => `
+      <div class="picker-option" data-slug="${escapeHtml(c.slug)}">
+        <span>${escapeHtml(c.child)}</span>
+      </div>`).join('');
+    $('picker-list').querySelectorAll('.picker-option[data-slug]').forEach(el => {
+      el.addEventListener('click', () => {
+        const slug = el.dataset.slug;
+        const { rowEl, txn } = pickerState;
+        closePicker();
+        updateTransactionCategory(rowEl, txn, slug);
+      });
+    });
+  }
+}
+
+$('picker-cancel').addEventListener('click', closePicker);
+$('picker-back').addEventListener('click', () => {
+  if (pickerState) {
+    pickerState.step = 1;
+    pickerState.selectedParent = null;
+    renderPicker();
+  }
+});
+$('picker-backdrop').addEventListener('click', (e) => {
+  if (e.target === $('picker-backdrop')) closePicker();
+});
+
+function populateCategoryFilter(rows) {
+  const cats = [...new Set(rows.map(r => r.category).filter(Boolean))].sort();
+  const sel = $('filter-category');
+  const current = sel.value;
+  const groups = {};
+  cats.forEach(c => {
+    const [parent, child] = c.split(':');
+    if (!groups[parent]) groups[parent] = [];
+    groups[parent].push({ full: c, child: child || '(unspecified)' });
+  });
+  let html = '<option value="">All categories</option>';
+  Object.keys(groups).sort().forEach(parent => {
+    html += `<optgroup label="${escapeHtml(parent)}">`;
+    groups[parent].forEach(({ full, child }) => {
+      html += `<option value="${escapeHtml(full)}"${full === current ? ' selected' : ''}>${escapeHtml(child)}</option>`;
+    });
+    html += '</optgroup>';
+  });
+  sel.innerHTML = html;
+}
+
+function applyFilters() {
+  const from = $('filter-from').value;
+  const to = $('filter-to').value;
+  const merchant = $('filter-merchant').value.trim().toLowerCase();
+  const category = $('filter-category').value;
+
+  return ALL.filter(r => {
+    if (category && r.category !== category) return false;
+    if (merchant && !(r.merchant || '').toLowerCase().includes(merchant)) return false;
+    const d = r.created_at ? r.created_at.slice(0, 10) : '';
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+}
+
+function render(preserveExpanded) {
+  const expandedIds = preserveExpanded
+    ? [...document.querySelectorAll('.row.expanded')].map(el => el.dataset.id)
+    : [];
+
+  const rows = applyFilters();
+  const container = $('rows');
+
+  let totalOut = 0, totalIn = 0;
+  rows.forEach(r => {
+    const amt = parseFloat(r.amount) || 0;
+    const t = (r.type || '').toUpperCase();
+    if (t === 'RECEIVE' || t === 'LOAN_DRAWDOWN') totalIn += amt;
+    else totalOut += amt;
+  });
+  $('stat-count').textContent = rows.length;
+  $('stat-out').textContent = fmtShort(totalOut);
+  $('stat-in').textContent = fmtShort(totalIn);
+  $('meta-count').textContent = `${rows.length} of ${ALL.length}`;
+
+  if (rows.length === 0) {
+    container.innerHTML = '<div class="empty">No transactions match these filters.</div>';
+    return;
+  }
+
+  container.innerHTML = rows.map(r => {
+    const typeClass = (r.type || 'other').toLowerCase();
+    const sign = (typeClass === 'receive' || typeClass === 'loan_drawdown') ? '+' : '−';
+    const merchant = escapeHtml(r.merchant || '—');
+    const ref = escapeHtml(r.reference || '');
+    const date = escapeHtml(r.date || '');
+    const time = escapeHtml(r.time || '');
+    const type = escapeHtml(r.type || '');
+    const amount = fmt(r.amount);
+    const raw = escapeHtml(r.raw_text || '');
+    const balance = r.balance_after ? `bal ${fmt(r.balance_after)}` : '';
+
+    let catHtml;
+    if (r.category) {
+      const [parent, ...rest] = String(r.category).split(':');
+      const child = rest.join(':') || '';
+      const correctedClass = r.category_corrected_at ? ' corrected' : '';
+      catHtml = `<div class="category${correctedClass}" data-action="edit-category">
+        <span class="parent">${escapeHtml(parent)}</span>${escapeHtml(child)}
+        <span class="pencil">✎</span>
+      </div>`;
+    } else {
+      catHtml = `<div class="category empty" data-action="edit-category">uncategorised <span class="pencil">✎</span></div>`;
+    }
+
+    return `<div class="row" data-id="${escapeHtml(r.row_id)}">
+      <div class="merchant">${merchant}</div>
+      <div class="amount ${typeClass}">${sign}${amount}</div>
+      ${catHtml}
+      <div class="detail" data-action="expand">${date} ${time} · ${type}</div>
+      <div class="detail-right" data-action="expand">${ref}${balance ? ' · ' + balance : ''}</div>
+      <div class="raw">${raw}</div>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.row').forEach(rowEl => {
+    const id = rowEl.dataset.id;
+    if (expandedIds.includes(id)) rowEl.classList.add('expanded');
+
+    rowEl.addEventListener('click', (e) => {
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action === 'edit-category') {
+        e.stopPropagation();
+        const txn = ALL.find(r => r.row_id === id);
+        if (txn) openPicker(rowEl, txn);
+      } else if (action === 'expand') {
+        rowEl.classList.toggle('expanded');
+      } else if (e.target.classList.contains('raw')) {
+        rowEl.classList.remove('expanded');
+      }
+    });
+  });
+}
+
+async function refresh() {
+  $('rows').innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const [txns, cats] = await Promise.all([fetchTransactions(), fetchCategories()]);
+    ALL = txns;
+    CATEGORIES = cats;
+    populateCategoryFilter(ALL);
+    const now = new Date();
+    $('meta-updated').textContent = `Updated ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    render();
+  } catch (e) {
+    $('rows').innerHTML = `<div class="error">Failed to load: ${escapeHtml(e.message)}</div>`;
+    console.error(e);
+  }
+}
+
+['filter-from', 'filter-to', 'filter-merchant', 'filter-category'].forEach(id => {
+  const el = $(id);
+  el.addEventListener('input', render);
+  el.addEventListener('change', render);
+});
+
+$('btn-clear').addEventListener('click', () => {
+  $('filter-from').value = '';
+  $('filter-to').value = '';
+  $('filter-merchant').value = '';
+  $('filter-category').value = '';
+  render();
+});
+
+$('btn-refresh').addEventListener('click', refresh);
+
+refresh();
+</script>
+</body>
+</html>
